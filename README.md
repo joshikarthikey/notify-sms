@@ -1,38 +1,38 @@
 
-# SMS Notification Forwarder for Feature Phone Users (Fedora Linux)
+# SMS Notification Forwarder for Feature Phone Users 
 
-## 🧭 Purpose
+## Purpose
 
 This project is intended for users who are transitioning from smartphones to feature phones and want to **stay notified about important digital communications**. With this solution, every desktop notification (e.g., from Gmail, Outlook, WhatsApp Web, Instagram, Slack, etc.) will be **forwarded as an SMS** using a GSM modem connected to your Fedora system.
 
-## 🎯 Core Idea
+## Core Idea
 
 Turn your Linux desktop into a smart SMS forwarder that captures D-Bus desktop notifications and relays them to your feature phone via `gammu`.
 
 ---
 
-## ⚙️ System Architecture
+## ⚙ System Architecture
 
 ```
-+-----------------+      +----------------------------+
-| D-Bus Notification API |-->  Python Listener Script  |
-+-----------------+      +----------------------------+
-                                       |
-                                       v
-                             +------------------+
-                             |  Gammu CLI + GSM |
-                             |    (SMS Sender)  |
-                             +------------------+
-                                       |
-                                       v
-                            +----------------------+
-                            |   Feature Phone SMS  |
-                            +----------------------+
++------------------------+      +----------------------------+
+| D-Bus Notification API | -->  |   Python Listener Script   |
++------------------------+      +----------------------------+
+                                               |
+                                               v
+                                     +------------------+
+                                     |  Gammu CLI + GSM |
+                                     |    (SMS Sender)  |
+                                     +------------------+
+                                               |
+                                               v
+                                    +----------------------+
+                                    |   Feature Phone SMS  |
+                                    +----------------------+
 ```
 
 ---
 
-## 🧑‍💻 Prerequisites
+## Prerequisites
 
 ### Hardware
 
@@ -54,7 +54,7 @@ Turn your Linux desktop into a smart SMS forwarder that captures D-Bus desktop n
 
 ---
 
-## 📦 Installation & Setup
+##  Installation & Setup
 
 ### 1. Install Dependencies
 
@@ -95,7 +95,7 @@ If this works, Gammu is configured properly.
 
 ---
 
-## 🧠 D-Bus Notification Capture
+## D-Bus Notification Capture
 
 Instead of using unreliable Python D-Bus bindings, we now use `dbus-monitor`:
 
@@ -107,7 +107,7 @@ This ensures notifications are reliably intercepted regardless of lock screen st
 
 ---
 
-## 🐍 Python Script
+## Python Script
 
 - Listens to `dbus-monitor` for incoming desktop notifications
 - Sends SMS via `gammu` with a 10-second rate limit
@@ -128,7 +128,7 @@ You should see:
 
 ---
 
-## 🔒 Lock Screen Behavior
+## Lock Screen Behavior
 
 Fedora locks the screen on lid-close. Override this:
 
@@ -149,7 +149,7 @@ sudo systemctl restart systemd-logind
 
 ---
 
-## 🔥 Pitfalls & Challenges
+## Pitfalls & Challenges
 
 - **Modem Busy**: `ModemManager` may hijack `/dev/ttyUSB0`
 - **Permissions**: Add yourself to `dialout` group: `sudo usermod -aG dialout $USER`
@@ -159,7 +159,7 @@ sudo systemctl restart systemd-logind
 
 ---
 
-## 📌 Current Issues
+## Current Issues
 
 - Messages from all apps are sent, even unimportant ones
 - No message history or deduplication
@@ -168,7 +168,7 @@ sudo systemctl restart systemd-logind
 
 ---
 
-## 🌱 Future Improvements
+## Future Improvements
 
 - Filter messages by importance or app
 - Bundle as a Fedora `.rpm` package
@@ -178,7 +178,7 @@ sudo systemctl restart systemd-logind
 
 ---
 
-## 📦 Packaging Plan
+## Packaging Plan
 
 ### Fedora RPM
 
@@ -190,9 +190,3 @@ sudo systemctl restart systemd-logind
 
 - Use `pyinstaller` to convert script to executable
 - May require virtual modem for testing or SMS gateway
-
----
-
-## 📋 License
-
-MIT License
