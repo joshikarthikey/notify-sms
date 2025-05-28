@@ -5,6 +5,9 @@ import re
 import time
 import os
 from dotenv import load_dotenv
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+
 
 # Load environment variables
 load_dotenv()
@@ -60,7 +63,8 @@ def monitor_notifications():
         ["dbus-monitor", "interface='org.freedesktop.Notifications'"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
+        bufsize=1  # Line-buffered output
     )
 
     collecting = False
