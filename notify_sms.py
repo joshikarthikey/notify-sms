@@ -17,7 +17,6 @@ LAST_SENT_TIME = 0
 MIN_INTERVAL = 10  # seconds
 
 def send_sms(message):
-    GAMMU_CONFIG = "/home/karthikey/gammu.config"
     global LAST_SENT_TIME
     now = time.time()
     if now - LAST_SENT_TIME < MIN_INTERVAL:
@@ -27,8 +26,9 @@ def send_sms(message):
 
     try:
         short_message = message[:160].replace('\n', ' ')
+        print(f"[DEBUG] Sending SMS: {short_message}")
         result = subprocess.run(
-            ["gammu", "-c", GAMMU_CONFIG, "sendsms", "TEXT", PHONE_NUMBER],
+            ["gammu", "sendsms", "TEXT", PHONE_NUMBER],
             input=short_message.encode(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -53,46 +53,64 @@ def monitor_notifications():
 
     collecting = False
     strings = []
+
     for line in proc.stdout:
         line = line.strip()
-        if line.startswith("method call") and "org.freedesktop.Notifications" in line:
+        print("[DEBUG] Raw line:", line)
+
+        # Detect the start of a notification
+        if line.startswith("method call") and "org.freedesktop.Notifications" in line and "Notify" in line:
             collecting = True
             strings = []
+            linenum = 0
             continue
-        if collecting and line.startswith('string "'):
-            value = re.sub(r'^string "(.*)"$', r"\1", line)
-            strings.append(value)
-            if len(strings) == 3:
-                app_name, summary, body = strings
-                # Gmail-specific handling
-                if app_name.lower() == "google chrome" and "mail.google.com" in body:
-                    sender, subject = parse_gmail_notification(body)
-                    message = f"Email from {sender}: {subject}"
-                    send_sms(message)
-                else:
-                    # Generic handling for other notifications
-                    if app_name.lower() == "notify-send":
-                        app_name = ""
-                    parts = []
-                    if app_name:
-                        parts.append(f"[{app_name}]")
-                    if summary:
-                        parts.append(summary)
-                    if body:
-                        parts.append(body)
-                    if parts:
-                        message = ": ".join(parts) if len(parts) > 1 else parts[0]
-                        send_sms(message)
-                collecting = False
 
-def parse_gmail_notification(body):
-    """
-    Extracts the sender's name and subject from the Gmail notification body.
-    """
-    lines = body.split("\n")
-    sender = lines[0].strip() if len(lines) > 0 else "Unknown Sender"
-    subject = lines[1].strip() if len(lines) > 1 else "No Subject"
-    return sender, subject
+        # Collect strings when in the "collecting" state
+        if collecting:
+            if line.startswith('string "'):
+                value = re.sub(r'^string "(.*)"$', r"\1", line)
+                strings.append(value)
+            elif strings[0] == "Google Chrome" and linenum == 6:
+                strings.append(line.strip().replace('"', ''))
+            linenum += 1
+        
+
+        # Process the notification when we have enough data
+        if collecting and len(strings) >= 4:
+            if strings[0] == "Google Chrome" and len(strings) < 5:
+                continue
+            elif strings[0] == "Google Chrome" and len(strings) == 5:
+                _, _, sender, app_name, body = strings[:5]  # Extract the first five strings
+                app_name = app_name.replace('string "', '').replace('"', '')
+                print(f"[DEBUG] Extracted Notification - App: {app_name}, Sender: {sender}, Body: {body}")
+            else:
+                app_name, _, sender, body = strings[:4]  # Extract the first four strings
+                print(f"[DEBUG] Extracted Notification - App: {app_name}, Summary: {sender}, Body: {body}")
+
+            # Combine summary and body if summary is empty
+            if not sender and body:
+                sender, body = body, ""
+
+            # Only send SMS if the notification contains meaningful data
+            if app_name and (sender or body):  # Allow empty body if summary is present
+                if strings[0] == "Google Chrome":
+                    message = f"Hey man,{sender} sent you a message via {app_name}: {body}"
+                else:
+                    message_parts = []
+                    if app_name:
+                        message_parts.append(f"[{app_name}]")
+                    if sender:
+                        message_parts.append(sender)
+                    if body:
+                        message_parts.append(body)
+                    message = ": ".join(message_parts)
+                send_sms(message)
+            else:
+                print("[DEBUG] Skipping incomplete or irrelevant notification.")
+
+            # Reset state for the next notification
+            collecting = False
+            strings = []
 
 if __name__ == "__main__":
     monitor_notifications()
