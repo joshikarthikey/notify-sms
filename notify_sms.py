@@ -24,23 +24,35 @@ def send_sms(message):
         return
     LAST_SENT_TIME = now
 
+    short_message = message[:160].replace('\n', ' ')
+    print(f"[DEBUG] Sending SMS: {short_message}")
+
     try:
-        short_message = message[:160].replace('\n', ' ')
-        print(f"[DEBUG] Sending SMS: {short_message}")
-        result = subprocess.run(
-            ["gammu", "sendsms", "TEXT", PHONE_NUMBER],
-            input=short_message.encode(),
+        # Start the gammu process
+        command = ["gammu", "sendsms", "TEXT", PHONE_NUMBER]
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
+            stderr=subprocess.PIPE
         )
-        print("[DEBUG] SMS sent. stdout:", result.stdout.decode())
-        if result.stderr:
-            print("[DEBUG] stderr:", result.stderr.decode())
-    except subprocess.CalledProcessError as e:
-        print("[ERROR] Failed to send SMS.")
-        print(e.stderr.decode())
-        print(e.stdout.decode())
+
+        # Send the message and wait up to 10 seconds
+        try:
+            stdout, stderr = proc.communicate(input=short_message.encode(), timeout=10)
+            print("[DEBUG] SMS sent. stdout:", stdout.decode())
+            if stderr:
+                print("[DEBUG] stderr:", stderr.decode())
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            print("[ERROR] SMS send timed out and was killed.")
+            print("[DEBUG] stdout after kill:", stdout.decode())
+            print("[DEBUG] stderr after kill:", stderr.decode())
+
+    except Exception as e:
+        print("[ERROR] Exception during SMS send:", e)
+
 
 def monitor_notifications():
     print("[DEBUG] Starting dbus-monitor listener...")
@@ -94,7 +106,7 @@ def monitor_notifications():
             # Only send SMS if the notification contains meaningful data
             if app_name and (sender or body):  # Allow empty body if summary is present
                 if strings[0] == "Google Chrome":
-                    message = f"Hey man,{sender} sent you a message via {app_name}: {body}"
+                    message = f"Hey man, {sender} sent you a message via {app_name}: {body}"
                 else:
                     message_parts = []
                     if app_name:
