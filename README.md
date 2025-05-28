@@ -1,211 +1,184 @@
+# Desktop Notification to SMS Gateway on Fedora Linux
 
-# SMS Notification Forwarder for Feature Phone Users 
+This project listens for desktop notifications (e.g., Gmail, WhatsApp Web, Instagram) on a Fedora desktop and forwards them via SMS using a USB GSM modem and Gammu.
 
-## Purpose
+## Features
 
-This project is intended for users who are transitioning from smartphones to feature phones and want to **stay notified about important digital communications**. With this solution, every desktop notification (e.g., from Gmail, Outlook, WhatsApp Web, Instagram, Slack, etc.) will be **forwarded as an SMS** using a GSM modem connected to your Fedora system.
-
-## Core Idea
-
-Turn your Linux desktop into a smart SMS forwarder that captures D-Bus desktop notifications and relays them to your feature phone via `gammu`.
-
----
-
-## ⚙ System Architecture
-
-```
-+------------------------+      +----------------------------+
-| D-Bus Notification API | -->  |   Python Listener Script   |
-+------------------------+      +----------------------------+
-                                               |
-                                               v
-                                     +------------------+
-                                     |  Gammu CLI + GSM |
-                                     |    (SMS Sender)  |
-                                     +------------------+
-                                               |
-                                               v
-                                    +----------------------+
-                                    |   Feature Phone SMS  |
-                                    +----------------------+
-```
+- Listens to desktop notifications using `dbus-monitor`.
+- Parses app name, sender, and message content.
+- Sends SMS alerts using Gammu.
+- Runs persistently as a user-level `systemd` service.
+- Survives lid close by disabling suspend behavior.
+- Handles modem disconnection with udev symlink.
 
 ---
 
 ## Prerequisites
 
-### Hardware
+- **Fedora Linux**
+- **USB GSM modem** supported by Gammu
+- Python 3.8+
+- `gammu`, `gammu-smsd`
+- D-Bus tools: `dbus`, `dbus-python`
 
-- Linux machine (tested on Fedora)
-- USB GSM Modem (like Huawei E303, SIM800L USB, etc.)
-- SIM card with SMS service
-- Feature phone
+### Install dependencies:
 
-### Software
-
-- Python 3
-- `gammu` & `gammu-smsd`
-- `dbus`, `gi`, and `dbus-monitor`
-- `.env` file with:
-  ```env
-  PHONE_NUMBER=+911234567890
-  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
-  ```
+```bash
+sudo dnf install python3-dbus gammu gammu-smsd dbus-tools
+```
 
 ---
 
-##  Installation & Setup
+## Folder Structure
 
-### 1. Install Dependencies
-
-```bash
-sudo dnf install python3 python3-pip gammu minicom
-pip install python-dotenv
 ```
-
-### 2. Configure Gammu
-
-Create `gammu.config`:
-
-```ini
-[gammu]
-port = /dev/ttyUSB0
-connection = at
+notify-sms/
+├── notify_sms.py         # Python script that listens and sends SMS
+├── gammu.config          # Gammu config with port and connection info
+├── notify_sms.service    # systemd user service file
+└── README.md
 ```
-
-Test it:
-
-```bash
-gammu -c gammu.config --identify
-```
-
-You may need to stop ModemManager:
-
-```bash
-sudo systemctl stop ModemManager
-```
-
-### 3. Test SMS Sending
-
-```bash
-echo "Hello" | gammu -c gammu.config sendsms TEXT +911234567890
-```
-
-If this works, Gammu is configured properly.
 
 ---
 
-## D-Bus Notification Capture
+## 1. Python Script
 
-Instead of using unreliable Python D-Bus bindings, we now use `dbus-monitor`:
+Create `notify_sms.py` inside the project directory.
 
-```bash
-dbus-monitor "interface='org.freedesktop.Notifications'"
-```
+It listens for desktop notifications and uses Gammu to send them as SMS.
 
-This ensures notifications are reliably intercepted regardless of lock screen state.
-
----
-
-## Python Script
-
-- Listens to `dbus-monitor` for incoming desktop notifications
-- Sends SMS via `gammu` with a 10-second rate limit
-
-Make it executable and run:
+Make sure the script is executable:
 
 ```bash
 chmod +x notify_sms.py
-./notify_sms.py
-```
-
-You should see:
-
-```
-[DEBUG] Starting dbus-monitor listener...
-[DEBUG] SMS sent. stdout: ...
 ```
 
 ---
 
-## Lock Screen Behavior
+## 2. Gammu Configuration
 
-Fedora locks the screen on lid-close. Override this:
+Create a config file named `gammu.config` in the project directory:
+
+```ini
+[gammu]
+port = /dev/gsm_modem
+connection = at
+```
+
+Ensure the GSM modem is symlinked to `/dev/gsm_modem` using udev (see below).
+
+---
+
+## 3. Create Udev Rule
+
+To handle dynamic USB port assignment:
 
 ```bash
-sudo nano /etc/systemd/logind.conf
+sudo nano /etc/udev/rules.d/99-gsm-modem.rules
 ```
 
-Set:
+Paste:
+
+```bash
+SUBSYSTEM=="tty", ATTRS{bInterfaceNumber}=="02", ATTRS{driver}=="option", SYMLINK+="gsm_modem"
 ```
+
+Reload udev:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+---
+
+## 4. Create systemd User Service
+
+Save the following as `~/.config/systemd/user/notify_sms.service`:
+
+```ini
+[Unit]
+Description=Send Desktop Notifications via SMS
+After=default.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/karthikey/notify-sms/notify_sms.py
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+Enable and start:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable notify_sms.service
+systemctl --user start notify_sms.service
+```
+
+Check status:
+
+```bash
+systemctl --user status notify_sms.service
+journalctl --user -u notify_sms.service -f
+```
+
+---
+
+## 5. Prevent Suspend on Lid Close
+
+Create config:
+
+```bash
+sudo mkdir -p /etc/systemd/logind.conf.d/
+sudo nano /etc/systemd/logind.conf.d/logind.conf
+```
+
+Paste:
+
+```ini
+[Login]
 HandleLidSwitch=ignore
+HandleLidSwitchDocked=ignore
+HandleLidSwitchExternalPower=ignore
+LidSwitchIgnoreInhibited=no
 ```
 
-Then:
+Reload login manager:
 
 ```bash
 sudo systemctl restart systemd-logind
 ```
 
----
-
-## Pitfalls & Challenges
-
-- **Modem Busy**: `ModemManager` may hijack `/dev/ttyUSB0`
-- **Permissions**: Add yourself to `dialout` group: `sudo usermod -aG dialout $USER`
-- **Lockscreen Filtering**: Resolved using `dbus-monitor` instead of D-Bus Python APIs
-- **Gammu config fallback**: Always use `-c gammu.config` explicitly
-- **Debugging**: Use `minicom` to test modem AT commands directly
+> ⚠️ This may cause logout — safe to apply and log in again.
 
 ---
 
-## Notification Support
+## 6. GSettings (GNOME Power Management)
 
-This tool forwards system notifications via SMS with special handling for different notification types:
+Make sure GNOME doesn't override your lid settings:
 
-### Enhanced Support
-- **Google Chrome Web Apps**: Optimized handling for:
-  - Gmail notifications
-  - WhatsApp Web notifications
-  - Other web-based messaging apps running in Chrome
-
-### General Support
-- **System-wide notifications**: Generic handling for all other desktop notifications with a fallback format of `[App Name]: Summary: Body`
-
-The notification parser is designed to extract meaningful information regardless of the notification source, ensuring you stay informed even when away from your computer.
-
-Note: Chrome web app notifications receive special formatting to provide clearer sender/message context in the SMS output.
+```bash
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+```
 
 ---
 
-## Current Issues
+## Notes
 
-- Messages from all apps are sent, even unimportant ones
-- No message history or deduplication
-- Long SMS split is not implemented yet
-- Gammu config must be explicitly used (`-c gammu.config`)
+- You may need to add your user to the `dialout` group:
 
----
+```bash
+sudo usermod -aG dialout $USER
+newgrp dialout
+```
 
-## Future Improvements
+- If Gammu fails to detect the modem, replug it and check `/dev/gsm_modem` exists.
+- You can test Gammu manually:
 
-- Filter messages by importance or app
-- Bundle as a Fedora `.rpm` package
-- Support Windows `.exe` for cross-platform usage
-- Logging and error notifications
-- Email IMAP integration for Gmail/Outlook summaries
-
----
-
-## Packaging Plan
-
-### Fedora RPM
-
-- Create `.spec` file
-- Install script as service
-- Add `.env`, `.service`, and `gammu.config` templates
-
-### Windows `.exe`
-
-- Use `pyinstaller` to convert script to executable
-- May require virtual modem for testing or SMS gateway
+```bash
+gammu -c gammu.config --identify
+gammu -c gammu.config sendsms TEXT <your-phone-number> -text "Test SMS"
+```
