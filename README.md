@@ -159,6 +159,25 @@ sudo systemctl restart systemd-logind
 
 ---
 
+## Notification Support
+
+This tool forwards system notifications via SMS with special handling for different notification types:
+
+### Enhanced Support
+- **Google Chrome Web Apps**: Optimized handling for:
+  - Gmail notifications
+  - WhatsApp Web notifications
+  - Other web-based messaging apps running in Chrome
+
+### General Support
+- **System-wide notifications**: Generic handling for all other desktop notifications with a fallback format of `[App Name]: Summary: Body`
+
+The notification parser is designed to extract meaningful information regardless of the notification source, ensuring you stay informed even when away from your computer.
+
+Note: Chrome web app notifications receive special formatting to provide clearer sender/message context in the SMS output.
+
+---
+
 ## Current Issues
 
 - Messages from all apps are sent, even unimportant ones
